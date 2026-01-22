@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: youtube-research-db
+    environment:
+      POSTGRES_DB: youtube_research
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - youtube-research-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Ollama for Local LLM
+  ollama:
+    image: ollama/ollama:latest
+    container_name: youtube-research-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - youtube-research-network
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+
+  # Spring Boot Application
+  spring-boot-app:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: youtube-research-api
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/youtube_research
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: password
+      OLLAMA_API_URL: http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - youtube-research-network
+
+volumes:
+  postgres_data:
+  ollama_data:
+
+networks:
+  youtube-research-network:
+    driver: bridge
