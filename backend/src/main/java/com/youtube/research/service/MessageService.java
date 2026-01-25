@@ -6,6 +6,7 @@ import com.youtube.research.repository.ConversationRepository;
 import com.youtube.research.repository.MessageRepository;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class MessageService {
@@ -42,5 +43,9 @@ public class MessageService {
                 .orElseThrow(() -> new IllegalArgumentException("Message not found"));
 
         messageRepository.deleteById(messageId);
+    }
+
+    public Optional<Message> getMessageById(Long messageId) {
+        return messageRepository.findById(messageId);
     }
 }

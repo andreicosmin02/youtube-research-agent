@@ -1,8 +1,10 @@
 package com.youtube.research.service;
 
 import com.youtube.research.entity.Conversation;
+import com.youtube.research.entity.Message;
 import com.youtube.research.entity.User;
 import com.youtube.research.repository.ConversationRepository;
+import com.youtube.research.repository.MessageRepository;
 import com.youtube.research.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,10 +16,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
 
 @ExtendWith(MockitoExtension.class)
 class ConversationServiceTest {
@@ -28,6 +31,9 @@ class ConversationServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private MessageRepository messageRepository;
+
     @InjectMocks
     private ConversationService conversationService;
 
@@ -37,35 +43,24 @@ class ConversationServiceTest {
         Long userId = 1L;
         String title = "Machine Learning Discussion";
 
-        // Create the user that should be returned by the userRepository mock
         User user = new User();
         user.setId(userId);
         user.setUsername("testuser");
 
-        // Create the conversation that should be returned by the conversationRepository mock
-        // after the save operation, including the ID assigned by the 'database'.
         Conversation savedConversation = new Conversation();
         savedConversation.setId(1L);
         savedConversation.setUser(user);
         savedConversation.setTitle(title);
 
-        // Configure the userRepository mock: findById should return the user
         when(userRepository.findById(eq(userId))).thenReturn(java.util.Optional.of(user));
 
-        // Configure the conversationRepository mock: save should return the saved conversation
-        // Using ArgumentCaptor to capture the conversation passed to save (before ID assignment by 'DB')
-        ArgumentCaptor<Conversation> conversationCaptor = ArgumentCaptor.forClass(Conversation.class);
-        when(conversationRepository.save(conversationCaptor.capture()))
+        when(conversationRepository.save(any(Conversation.class)))
                 .thenAnswer(invocation -> {
                     Conversation conv = invocation.getArgument(0);
-                    // Simulate the DB assigning an ID. In this case, we just set it directly
-                    // as the mock returns the modified object.
-                    // Alternatively, you could return 'savedConversation' directly if its state is fully known.
-                    // Returning the captured object with the ID set simulates the DB operation more closely.
                     if (conv.getId() == null) {
-                        conv.setId(1L); // Assign ID like a DB would
+                        conv.setId(1L);
                     }
-                    return conv; // Return the same object, now with ID
+                    return conv;
                 });
 
         // Act
@@ -76,16 +71,56 @@ class ConversationServiceTest {
         assertThat(result.getTitle()).isEqualTo(title);
         assertThat(result.getUser().getId()).isEqualTo(userId);
 
-        // Optional Verification: Check interactions
         verify(userRepository).findById(eq(userId));
-        verify(conversationRepository).save(any(Conversation.class)); // Or verify with captor if needed
+        verify(conversationRepository).save(any(Conversation.class));
+    }
 
-        // Optional Verification: Check the conversation passed to save
-        Conversation capturedConversation = conversationCaptor.getValue();
-        assertThat(capturedConversation.getUser()).isEqualTo(user);
-        assertThat(capturedConversation.getTitle()).isEqualTo(title);
-        // The ID might be null here if the service creates the object without ID initially
-        // assertThat(capturedConversation.getId()).isNull(); // Uncomment if applicable
+    @Test
+    void shouldThrowExceptionWhenCreatingConversationWithEmptyTitle() {
+        // Arrange
+        Long userId = 1L;
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.createConversation(userId, ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Title cannot be empty");
+    }
+
+    @Test
+    void shouldThrowExceptionWhenCreatingConversationWithNullTitle() {
+        // Arrange
+        Long userId = 1L;
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.createConversation(userId, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Title cannot be empty");
+    }
+
+    @Test
+    void shouldThrowExceptionWhenCreatingConversationWithTitleTooLong() {
+        // Arrange
+        Long userId = 1L;
+        String tooLongTitle = "a".repeat(256);
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.createConversation(userId, tooLongTitle))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Title cannot exceed 255 characters");
+    }
+
+    @Test
+    void shouldThrowExceptionWhenCreatingConversationForNonExistentUser() {
+        // Arrange
+        Long userId = 999L;
+
+        when(userRepository.findById(userId))
+                .thenReturn(java.util.Optional.empty());
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.createConversation(userId, "Title"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("User not found");
     }
 
     @Test
@@ -103,7 +138,7 @@ class ConversationServiceTest {
         conv1.setTitle("First conversation");
 
         Conversation conv2 = new Conversation();
-        conv2.setId(1L);
+        conv2.setId(2L);
         conv2.setUser(user);
         conv2.setTitle("Second conversation");
 
@@ -118,6 +153,56 @@ class ConversationServiceTest {
         // Assert
         assertThat(result).hasSize(2);
         assertThat(result).extracting("title").containsExactly("First conversation", "Second conversation");
+    }
+
+    @Test
+    void shouldUpdateConversationTitle() {
+        // Arrange
+        Long conversationId = 1L;
+        String newTitle = "Updated Title";
+
+        Conversation conversation = new Conversation();
+        conversation.setId(conversationId);
+        conversation.setTitle("Old Title");
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(java.util.Optional.of(conversation));
+
+        when(conversationRepository.save(any(Conversation.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // Act
+        Conversation result = conversationService.updateConversation(conversationId, newTitle);
+
+        // Assert
+        assertThat(result.getTitle()).isEqualTo(newTitle);
+        verify(conversationRepository).findById(conversationId);
+        verify(conversationRepository).save(any(Conversation.class));
+    }
+
+    @Test
+    void shouldThrowExceptionWhenUpdatingWithEmptyTitle() {
+        // Arrange
+        Long conversationId = 1L;
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.updateConversation(conversationId, ""))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Title cannot be empty");
+    }
+
+    @Test
+    void shouldThrowExceptionWhenUpdatingNonExistentConversation() {
+        // Arrange
+        Long conversationId = 999L;
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(java.util.Optional.empty());
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.updateConversation(conversationId, "New Title"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Conversation not found");
     }
 
     @Test
@@ -142,5 +227,77 @@ class ConversationServiceTest {
 
         // Assert
         verify(conversationRepository).deleteById(conversationId);
+    }
+
+    @Test
+    void shouldThrowExceptionWhenDeletingNonExistentConversation() {
+        // Arrange
+        Long conversationId = 999L;
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(java.util.Optional.empty());
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.deleteConversation(conversationId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Conversation not found");
+    }
+
+    @Test
+    void shouldGetConversationMessages() {
+        // Arrange
+        Long conversationId = 1L;
+        User user = new User();
+        user.setId(1L);
+        user.setUsername("testuser");
+
+        Conversation conversation = new Conversation();
+        conversation.setId(conversationId);
+        conversation.setUser(user);
+        conversation.setTitle("Test Conversation");
+
+        Message msg1 = new Message();
+        msg1.setId(1L);
+        msg1.setConversation(conversation);
+        msg1.setRole("user");
+        msg1.setContent("{\"type\":\"text\",\"text\":\"First\"}");
+
+        Message msg2 = new Message();
+        msg2.setId(2L);
+        msg2.setConversation(conversation);
+        msg2.setRole("assistant");
+        msg2.setContent("{\"type\":\"text\",\"text\":\"Second\"}");
+
+        List<Message> messages = List.of(msg1, msg2);
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(java.util.Optional.of(conversation));
+
+        when(messageRepository.findByConversationOrderByCreatedAtAsc(conversation))
+                .thenReturn(messages);
+
+        // Act
+        List<Message> result = conversationService.getConversationMessages(conversationId);
+
+        // Assert
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting("role").containsExactly("user", "assistant");
+
+        verify(conversationRepository).findById(conversationId);
+        verify(messageRepository).findByConversationOrderByCreatedAtAsc(conversation);
+    }
+
+    @Test
+    void shouldThrowExceptionWhenGettingMessagesForNonExistentConversation() {
+        // Arrange
+        Long conversationId = 999L;
+
+        when(conversationRepository.findById(conversationId))
+                .thenReturn(java.util.Optional.empty());
+
+        // Act & Assert
+        assertThatThrownBy(() -> conversationService.getConversationMessages(conversationId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Conversation not found");
     }
 }
