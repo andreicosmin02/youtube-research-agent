@@ -46,6 +46,7 @@ services:
       OLLAMA_API_URL: http://ollama:11434
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION: ${JWT_EXPIRATION}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
