@@ -24,7 +24,7 @@ public class Message {
     @Column(nullable = false, length = 50)
     private String role;  // "user" or "assistant"
 
-    @Column(columnDefinition = "JSON", nullable = false)
+    @Column(columnDefinition = "TEXT", nullable = false)
     private String content;  // Flexible JSON content
 
     @Column(nullable = false, updatable = false)

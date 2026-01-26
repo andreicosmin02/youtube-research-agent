@@ -19,16 +19,38 @@ public class MessageService {
         this.conversationRepository = conversationRepository;
     }
 
+//    public Message saveMessage(Long conversationId, String role, String content) {
+//        Conversation conversation = conversationRepository.findById(conversationId)
+//                .orElseThrow(() -> new IllegalArgumentException("Conversation not found"));
+//
+//        Message message = new Message();
+//        message.setConversation(conversation);
+//        message.setRole(role);
+//        message.setContent(content);
+//
+//        return messageRepository.save(message);
+//    }
+
     public Message saveMessage(Long conversationId, String role, String content) {
         Conversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("Conversation not found"));
 
+        // Wrap content in JSON format
+        String jsonContent = "{\"type\":\"text\",\"text\":\"" + escapeJson(content) + "\"}";
+
         Message message = new Message();
         message.setConversation(conversation);
         message.setRole(role);
-        message.setContent(content);
+        message.setContent(jsonContent);
 
         return messageRepository.save(message);
+    }
+
+    private String escapeJson(String text) {
+        return text.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
     }
 
     public List<Message> getConversationMessages(Long conversationId) {
