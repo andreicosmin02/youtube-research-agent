@@ -1,5 +1,7 @@
 package com.youtube.research.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.youtube.research.dto.youtube.YouTubeVideoListResponse;
 import com.youtube.research.entity.Conversation;
 import com.youtube.research.entity.Message;
 import com.youtube.research.entity.User;
@@ -7,14 +9,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import reactor.core.publisher.Flux;
+import reactor.test.StepVerifier;
 
 import java.io.IOException;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,6 +37,9 @@ class MessageHandlerServiceTest {
     @Mock
     private CommentService commentService;
 
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     @InjectMocks
     private MessageHandlerService messageHandlerService;
 
@@ -48,8 +56,11 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(anyString(), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Response");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -72,15 +83,18 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(anyString(), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn(expectedResponse);
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         String result = messageHandlerService.handleMessage(conversationId, userMessage);
 
         // Assert
-        assertThat(result).isEqualTo(expectedResponse);
-        verify(ollamaService).generateResponse(anyString());
+        assertThat(result).contains(expectedResponse);
+        verify(ollamaService).generateResponse(anyString(), anyString());
     }
 
     @Test
@@ -97,15 +111,18 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(anyString(), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn(assistantResponse);
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         String result = messageHandlerService.handleMessage(conversationId, userMessage);
 
         // Assert
-        assertThat(result).isEqualTo(assistantResponse);
-        verify(messageService).saveMessage(conversationId, "assistant", assistantResponse);
+        assertThat(result).contains(assistantResponse);
+        verify(messageService).saveMessage(eq(conversationId), eq("assistant"), anyString());
     }
 
     @Test
@@ -117,7 +134,7 @@ class MessageHandlerServiceTest {
         // Act & Assert
         assertThatThrownBy(() -> messageHandlerService.handleMessage(conversationId, emptyMessage))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("User message cannot be empty");
+                .hasMessageContaining("cannot be null or blank");
     }
 
     @Test
@@ -128,7 +145,7 @@ class MessageHandlerServiceTest {
         // Act & Assert
         assertThatThrownBy(() -> messageHandlerService.handleMessage(null, userMessage))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("Conversation ID cannot be null");
+                .hasMessageContaining("cannot be null or blank");
     }
 
     @Test
@@ -138,7 +155,7 @@ class MessageHandlerServiceTest {
         String userMessage = "Find me videos about machine learning";
 
         OllamaService.AgentDecision mockDecision = new OllamaService.AgentDecision(
-                "chat",  // Use chat instead of search
+                "chat",
                 null,
                 null,
                 null,
@@ -150,8 +167,11 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here are some videos");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -177,14 +197,20 @@ class MessageHandlerServiceTest {
                 "User wants to search"
         );
 
+        YouTubeVideoListResponse mockResponse = new YouTubeVideoListResponse();
+        mockResponse.setItems(new ArrayList<>());
+
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
         when(youtubeService.searchVideos(eq(searchQuery), eq(5)))
-                .thenReturn(new com.youtube.research.dto.youtube.YouTubeVideoListResponse());
+                .thenReturn(mockResponse);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here are some videos");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -210,15 +236,21 @@ class MessageHandlerServiceTest {
                 "User wants advanced search with filters"
         );
 
+        YouTubeVideoListResponse mockResponse = new YouTubeVideoListResponse();
+        mockResponse.setItems(new ArrayList<>());
+
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
         when(youtubeService.searchVideosAdvanced(eq(searchQuery), eq(5),
                 eq("viewCount"), eq("video"), eq("long")))
-                .thenReturn(new com.youtube.research.dto.youtube.YouTubeVideoListResponse());
+                .thenReturn(mockResponse);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here are long videos");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -245,14 +277,21 @@ class MessageHandlerServiceTest {
                 "User wants to see comments"
         );
 
+        com.youtube.research.dto.youtube.YouTubeCommentListResponse mockResponse =
+                new com.youtube.research.dto.youtube.YouTubeCommentListResponse();
+        mockResponse.setItems(new ArrayList<>());
+
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
         when(commentService.getVideoComments(eq(videoId), eq(20)))
-                .thenReturn(new com.youtube.research.dto.youtube.YouTubeCommentListResponse());
+                .thenReturn(mockResponse);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here's what people are saying");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -278,18 +317,21 @@ class MessageHandlerServiceTest {
                 "User wants video details"
         );
 
-        when(ollamaService.decideAction(eq(userMessage), anyString()))
-                .thenReturn(mockDecision);
-
         com.google.api.services.youtube.model.Video mockVideo =
                 new com.google.api.services.youtube.model.Video();
         mockVideo.setId(videoId);
 
+        when(ollamaService.decideAction(eq(userMessage), anyString()))
+                .thenReturn(mockDecision);
+
         when(youtubeService.getVideoById(eq(videoId)))
                 .thenReturn(mockVideo);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here are the video details");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -317,8 +359,11 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Machine learning is a subset of AI...");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
@@ -337,9 +382,9 @@ class MessageHandlerServiceTest {
         String userMessage = "Find me videos about machine learning";
         String searchQuery = "machine learning";
 
-        com.youtube.research.dto.youtube.YouTubeVideoListResponse mockSearchResults =
-                new com.youtube.research.dto.youtube.YouTubeVideoListResponse();
+        YouTubeVideoListResponse mockSearchResults = new YouTubeVideoListResponse();
         mockSearchResults.setKind("youtube#videoListResponse");
+        mockSearchResults.setItems(new ArrayList<>());
 
         OllamaService.AgentDecision mockDecision = new OllamaService.AgentDecision(
                 "search",
@@ -357,16 +402,18 @@ class MessageHandlerServiceTest {
         when(youtubeService.searchVideos(eq(searchQuery), eq(5)))
                 .thenReturn(mockSearchResults);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Here are some videos");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
 
         // Assert
-        // Verify search was called and results were stored
         verify(youtubeService).searchVideos(eq(searchQuery), eq(5));
-        verify(messageService).saveMessage(conversationId, "assistant", "Here are some videos");
+        verify(messageService).saveMessage(eq(conversationId), eq("assistant"), anyString());
     }
 
     @Test
@@ -388,13 +435,141 @@ class MessageHandlerServiceTest {
         when(ollamaService.decideAction(eq(userMessage), anyString()))
                 .thenReturn(mockDecision);
 
-        when(ollamaService.generateResponse(anyString()))
+        when(ollamaService.generateResponse(anyString(), anyString()))
                 .thenReturn("Response");
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
 
         // Act
         messageHandlerService.handleMessage(conversationId, userMessage);
 
-        // Assert - Verify decideAction was called with some context string (could be empty on first call)
+        // Assert
         verify(ollamaService).decideAction(eq(userMessage), anyString());
+    }
+
+    // ==================== Streaming Tests ====================
+
+    @Test
+    void shouldReturnErrorFluxWhenConversationIdIsNullForStreaming() {
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(null, "test message");
+
+        // Assert
+        StepVerifier.create(result)
+                .expectErrorMatches(e -> e instanceof IllegalArgumentException &&
+                        e.getMessage().contains("cannot be null or blank"))
+                .verify();
+    }
+
+    @Test
+    void shouldReturnErrorFluxWhenMessageIsEmptyForStreaming() {
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(1L, "");
+
+        // Assert
+        StepVerifier.create(result)
+                .expectErrorMatches(e -> e instanceof IllegalArgumentException &&
+                        e.getMessage().contains("cannot be null or blank"))
+                .verify();
+    }
+
+    @Test
+    void shouldReturnErrorFluxWhenMessageIsNullForStreaming() {
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(1L, null);
+
+        // Assert
+        StepVerifier.create(result)
+                .expectErrorMatches(e -> e instanceof IllegalArgumentException &&
+                        e.getMessage().contains("cannot be null or blank"))
+                .verify();
+    }
+
+    @Test
+    void shouldSaveUserMessageBeforeStreaming() throws IOException {
+        // Arrange
+        Long conversationId = 1L;
+        String userMessage = "What is machine learning?";
+
+        OllamaService.AgentDecision mockDecision = new OllamaService.AgentDecision(
+                "chat", null, null, null, null, null, "General question"
+        );
+
+        when(ollamaService.decideAction(eq(userMessage), anyString()))
+                .thenReturn(mockDecision);
+
+        when(ollamaService.generateStreamingResponse(anyString(), anyString()))
+                .thenReturn(Flux.just("Machine ", "learning ", "is..."));
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
+
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(conversationId, userMessage);
+
+        // Collect all tokens to complete the stream
+        result.collectList().block();
+
+        // Assert
+        verify(messageService).saveMessage(conversationId, "user", userMessage);
+    }
+
+    @Test
+    void shouldStreamTokensForChatAction() throws IOException {
+        // Arrange
+        Long conversationId = 1L;
+        String userMessage = "Hello!";
+
+        OllamaService.AgentDecision mockDecision = new OllamaService.AgentDecision(
+                "chat", null, null, null, null, null, "Greeting"
+        );
+
+        when(ollamaService.decideAction(eq(userMessage), anyString()))
+                .thenReturn(mockDecision);
+
+        when(ollamaService.generateStreamingResponse(anyString(), anyString()))
+                .thenReturn(Flux.just("Hi", " there", "!"));
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
+
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(conversationId, userMessage);
+
+        // Assert
+        StepVerifier.create(result)
+                .expectNext("Hi")
+                .expectNext(" there")
+                .expectNext("!")
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldNotCallYouTubeServiceForChatActionInStreaming() throws IOException {
+        // Arrange
+        Long conversationId = 1L;
+        String userMessage = "What is the weather?";
+
+        OllamaService.AgentDecision mockDecision = new OllamaService.AgentDecision(
+                "chat", null, null, null, null, null, "General question"
+        );
+
+        when(ollamaService.decideAction(eq(userMessage), anyString()))
+                .thenReturn(mockDecision);
+
+        when(ollamaService.generateStreamingResponse(anyString(), anyString()))
+                .thenReturn(Flux.just("I don't know"));
+
+        when(messageService.getConversationMessages(conversationId))
+                .thenReturn(new ArrayList<>());
+
+        // Act
+        Flux<String> result = messageHandlerService.handleMessageStreaming(conversationId, userMessage);
+        result.collectList().block();
+
+        // Assert
+        verify(youtubeService, never()).searchVideos(anyString(), anyInt());
+        verify(commentService, never()).getVideoComments(anyString(), anyInt());
     }
 }

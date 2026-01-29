@@ -24,21 +24,21 @@ class OllamaServiceTest {
 
     @Test
     void shouldThrowExceptionWhenPromptIsEmpty() {
-        assertThatThrownBy(() -> ollamaService.generateResponse(""))
+        assertThatThrownBy(() -> ollamaService.generateResponse("", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Prompt cannot be empty");
     }
 
     @Test
     void shouldThrowExceptionWhenPromptIsNull() {
-        assertThatThrownBy(() -> ollamaService.generateResponse(null))
+        assertThatThrownBy(() -> ollamaService.generateResponse(null, null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Prompt cannot be empty");
     }
 
     @Test
     void shouldThrowExceptionWhenPromptIsOnlyWhitespace() {
-        assertThatThrownBy(() -> ollamaService.generateResponse("   "))
+        assertThatThrownBy(() -> ollamaService.generateResponse("   ", null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Prompt cannot be empty");
     }

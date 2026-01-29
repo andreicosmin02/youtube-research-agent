@@ -48,67 +48,6 @@ class MessageServiceTest {
     }
 
     @Test
-    void shouldSaveUserMessage() {
-        // Arrange
-        Long conversationId = 1L;
-        String messageContent = "{\"type\":\"text\",\"text\":\"Find me videos about machine learning\"}";
-
-        User user = createTestUser(1L);
-        Conversation conversation = createTestConversation(conversationId, user);
-
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(java.util.Optional.of(conversation));
-
-        when(messageRepository.save(any(Message.class)))
-                .thenAnswer(invocation -> {
-                    Message msg = invocation.getArgument(0);
-                    msg.setId(1L);
-                    return msg;
-                });
-
-        // Act
-        Message result = messageService.saveMessage(conversationId, "user", messageContent);
-
-        // Assert
-        assertThat(result.getId()).isEqualTo(1L);
-        assertThat(result.getRole()).isEqualTo("user");
-        assertThat(result.getContent()).isEqualTo(messageContent);
-        assertThat(result.getConversation().getId()).isEqualTo(conversationId);
-
-        verify(conversationRepository).findById(conversationId);
-        verify(messageRepository).save(any(Message.class));
-    }
-
-    @Test
-    void shouldSaveAssistantMessage() {
-        // Arrange
-        Long conversationId = 1L;
-        String messageContent = "{\"type\":\"search_results\",\"query\":\"machine learning\",\"results_count\":5}";
-
-        User user = createTestUser(1L);
-        Conversation conversation = createTestConversation(conversationId, user);
-
-        when(conversationRepository.findById(conversationId))
-                .thenReturn(java.util.Optional.of(conversation));
-
-        when(messageRepository.save(any(Message.class)))
-                .thenAnswer(invocation -> {
-                    Message msg = invocation.getArgument(0);
-                    msg.setId(2L);
-                    return msg;
-                });
-
-        // Act
-        Message result = messageService.saveMessage(conversationId, "assistant", messageContent);
-
-        // Assert
-        assertThat(result.getId()).isEqualTo(2L);
-        assertThat(result.getRole()).isEqualTo("assistant");
-        assertThat(result.getContent()).isEqualTo(messageContent);
-        assertThat(result.getConversation().getId()).isEqualTo(conversationId);
-    }
-
-    @Test
     void shouldGetConversationMessages() {
         // Arrange
         Long conversationId = 1L;

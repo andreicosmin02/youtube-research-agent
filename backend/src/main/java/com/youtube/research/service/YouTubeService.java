@@ -379,11 +379,16 @@ public class YouTubeService {
                     .setQ(query)
                     .setKey(youtubeConfig.getApiKey())
                     .setMaxResults((long) maxResults)
-                    .setType(Collections.singletonList("video"))
-                    .setOrder(order)
-                    .setVideoType(videoType)
-                    .setVideoDuration(videoDuration)
-                    .setFields("items(snippet(channelId,channelTitle,description,publishedAt,thumbnails,title),id),pageInfo,nextPageToken,prevPageToken");
+                    .setType(Collections.singletonList("video"));
+
+            // Add filters only if provided (optional parameters)
+            if (order != null && !order.isBlank()) {
+                searchRequest.setOrder(order);
+            }
+
+            if (videoDuration != null && !videoDuration.isBlank()) {
+                searchRequest.setVideoDuration(videoDuration);
+            }
 
             SearchListResponse searchResponse = searchRequest.execute();
 

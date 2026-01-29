@@ -1,24 +1,31 @@
 package com.youtube.research.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 @Slf4j
 @Service
 public class OllamaService {
 
-    @Value("${ollama.base-url:http://localhost:11434}")
+    @Value("${ollama.base-url:http://localhost:1234}")
     private String ollamaBaseUrl;
 
-    @Value("${ollama.model:mistral}")
+    @Value("${ollama.model:mistralai/mistral-7b-instruct-v0.3}")
     private String model;
 
     private final WebClient webClient;
@@ -30,91 +37,156 @@ public class OllamaService {
     }
 
     /**
-     * Get a response from Ollama LLM
+     * Generate a streaming response from LM Studio using /v1/chat/completions endpoint
+     * This returns tokens one by one as they are generated
+     *
+     * @param prompt The prompt/message to send
+     * @param context Optional conversation context
+     * @return Flux of response text chunks (token by token)
+     */
+    public Flux<String> generateStreamingResponse(String prompt, String context) {
+        if (prompt == null || prompt.isBlank()) {
+            return Flux.error(new IllegalArgumentException("Prompt cannot be empty"));
+        }
+
+        log.debug("Generating streaming response from LM Studio for prompt: {}",
+                prompt.substring(0, Math.min(100, prompt.length())));
+
+        // Build the full prompt with context
+        String fullPrompt = context != null && !context.isBlank()
+                ? context + "\n\nUser: " + prompt
+                : prompt;
+
+        // Use OpenAI-compatible /v1/chat/completions endpoint for streaming
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("messages", new Object[]{
+                Map.of("role", "user", "content", fullPrompt)
+        });
+        requestBody.put("stream", true);
+        requestBody.put("max_tokens", 2048);
+
+        String url = ollamaBaseUrl + "/v1/chat/completions";
+
+        return webClient.post()
+                .uri(url)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToFlux(new ParameterizedTypeReference<ServerSentEvent<String>>() {})
+                .map(ServerSentEvent::data)
+                .filter(Objects::nonNull)
+                .filter(data -> !data.equals("[DONE]"))
+                .flatMap(data -> {
+                    String token = extractContentFromStreamChunk(data);
+                    return token == null ? Mono.empty() : Mono.just(token);
+                });
+
+    }
+
+    /**
+     * Extract the content delta from a streaming chunk
+     * LM Studio returns OpenAI-compatible format: {"choices":[{"delta":{"content":"token"}}]}
+     */
+    private String extractContentFromStreamChunk(String data) {
+        try {
+            JsonNode node = objectMapper.readTree(data);
+            JsonNode content = node.at("/choices/0/delta/content");
+
+            if (content.isMissingNode()) {
+                return null; // ← THIS IS CRITICAL
+            }
+
+            return content.asText(); // NO trim, preserves leading spaces
+        } catch (Exception e) {
+            log.warn("Bad SSE chunk: {}", data);
+            return null;
+        }
+    }
+
+    /**
+     * Non-streaming response wrapped in Mono for fallback
+     */
+    private Mono<String> generateNonStreamingResponseAsMono(String prompt, String context) {
+        return Mono.fromCallable(() -> generateResponse(prompt, context))
+                .onErrorResume(e -> Mono.just("I apologize, but I'm having trouble generating a response right now."));
+    }
+
+    /**
+     * Get a response from LM Studio (convenience method without context)
      *
      * @param prompt The prompt/message to send
      * @return LLM response text
      * @throws IOException If API call fails
      */
-//    public String generateResponse(String prompt) throws IOException {
-//        if (prompt == null || prompt.isBlank()) {
-//            throw new IllegalArgumentException("Prompt cannot be empty");
-//        }
-//
-//        log.debug("Generating response from Ollama for prompt: {}", prompt.substring(0, Math.min(100, prompt.length())));
-//
-//        try {
-//            Map<String, Object> requestBody = new HashMap<>();
-//            requestBody.put("model", model);
-//            requestBody.put("prompt", prompt);
-//            requestBody.put("stream", false);
-//
-//            String url = ollamaBaseUrl + "/api/generate";
-//
-//            String response = webClient.post()
-//                    .uri(url)
-//                    .bodyValue(requestBody)
-//                    .retrieve()
-//                    .bodyToMono(String.class)
-//                    .block();
-//
-//            if (response == null || response.isBlank()) {
-//                throw new IOException("Empty response from Ollama");
-//            }
-//
-//            JsonNode jsonNode = objectMapper.readTree(response);
-//            String generatedText = jsonNode.get("response").asText();
-//
-//            log.debug("Generated response length: {}", generatedText.length());
-//            return generatedText;
-//
-//        } catch (IOException e) {
-//            log.error("Error calling Ollama API", e);
-//            throw e;
-//        } catch (Exception e) {
-//            log.error("Unexpected error generating response", e);
-//            throw new IOException("Error generating response from LLM", e);
-//        }
-//    }
-
     public String generateResponse(String prompt) throws IOException {
+        return generateResponse(prompt, null);
+    }
+
+    /**
+     * Get a response from LM Studio using /v1/responses endpoint (non-streaming)
+     *
+     * @param prompt The prompt/message to send
+     * @param context Optional conversation context
+     * @return LLM response text
+     * @throws IOException If API call fails
+     */
+    public String generateResponse(String prompt, String context) throws IOException {
         if (prompt == null || prompt.isBlank()) {
             throw new IllegalArgumentException("Prompt cannot be empty");
         }
 
-        log.debug("Generating response from Ollama for prompt: {}", prompt.substring(0, Math.min(100, prompt.length())));
+        log.debug("Generating response from LM Studio for prompt: {}",
+                prompt.substring(0, Math.min(100, prompt.length())));
 
         try {
+            // Build the full prompt with context
+            String fullPrompt = context != null && !context.isBlank()
+                    ? context + "\n\nUser: " + prompt
+                    : prompt;
+
+            // LM Studio's /v1/responses endpoint uses "input" parameter
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", model);
-            requestBody.put("prompt", prompt);
+            requestBody.put("input", fullPrompt);
             requestBody.put("stream", false);
 
-            String url = ollamaBaseUrl + "/api/generate";
+            String url = ollamaBaseUrl + "/v1/responses";
 
             String response = webClient.post()
                     .uri(url)
+                    .header("Content-Type", "application/json")
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(String.class)
-                    .blockOptional()  // Use blockOptional instead of block
-                    .orElseThrow(() -> new IOException("Empty response from Ollama"));
+                    .blockOptional()
+                    .orElseThrow(() -> new IOException("Empty response from LM Studio"));
 
             if (response.isBlank()) {
-                throw new IOException("Empty response from Ollama");
+                throw new IOException("Empty response from LM Studio");
             }
 
+            log.debug("Raw LM Studio response: {}", response.substring(0, Math.min(200, response.length())));
+
             JsonNode jsonNode = objectMapper.readTree(response);
-            String generatedText = jsonNode.get("response").asText();
+            // LM Studio /v1/responses returns nested structure:
+            // { "output": [{ "content": [{ "text": "..." }] }] }
+            String generatedText = jsonNode.get("output")
+                    .get(0)
+                    .get("content")
+                    .get(0)
+                    .get("text")
+                    .asText();
 
             log.debug("Generated response length: {}", generatedText.length());
             return generatedText;
 
         } catch (IOException e) {
-            log.error("Error calling Ollama API", e);
+            log.error("Error calling LM Studio API: {}", e.getMessage(), e);
             throw e;
         } catch (Exception e) {
-            log.error("Unexpected error generating response", e);
+            log.error("Unexpected error generating response: {}", e.getMessage(), e);
             throw new IOException("Error generating response from LLM", e);
         }
     }
@@ -144,31 +216,36 @@ Available actions:
 4. "get_comments" - Get and analyze comments from a video. Use when user asks about what people think.
 5. "chat" - General conversation. Use for non-YouTube questions.
 
-Respond in JSON format:
+Respond ONLY with valid JSON, no other text:
 {
   "action": "one of the above",
   "query": "search term or video ID if applicable",
-  "metadata": "{\"order\": \"date\", \"videoType\": \"video\", \"videoDuration\": \"short\"}" // optional, for search_advanced
+  "videoId": "video ID if applicable",
+  "order": "relevance/date/viewCount/rating if search_advanced",
+  "videoType": "video/channel/playlist if search_advanced",
+  "videoDuration": "short/medium/long if search_advanced",
+  "reasoning": "brief explanation"
 }
 """;
 
         String prompt = systemPrompt + "\n\nConversation context:\n" + conversationContext +
                 "\n\nUser message: " + userMessage;
 
-        String response = generateResponse(prompt);
+        String response = generateResponse(prompt, null);
 
         try {
             return objectMapper.readValue(response, AgentDecision.class);
         } catch (IOException e) {
-            log.error("Failed to parse agent decision JSON", e);
+            log.error("Failed to parse agent decision JSON: {}", response, e);
             // Fallback to chat if decision parsing fails
-            return new AgentDecision("chat", null, null, null, null, null, "Parse error, defaulting to chat");
+            return new AgentDecision("chat", userMessage, null, null, null, null, "Parse error, defaulting to chat");
         }
     }
 
     /**
      * Agent decision object
      */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AgentDecision {
         public String action;
         public String query;
@@ -180,7 +257,8 @@ Respond in JSON format:
 
         public AgentDecision() {}
 
-        public AgentDecision(String action, String query, String videoId, String order, String videoType, String videoDuration, String reasoning) {
+        public AgentDecision(String action, String query, String videoId, String order,
+                             String videoType, String videoDuration, String reasoning) {
             this.action = action;
             this.query = query;
             this.videoId = videoId;
