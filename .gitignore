@@ -1,7 +1,16 @@
+# Environment files
 .env
-.env.local
-target/
+.env.*
+!.env.example
+
+# IDE
 .idea/
 .vscode/
+
+# Java / Maven
+backend/target/
 *.log
-node_modules/
+
+# Node / React
+frontend/youtube-research-ui/node_modules/
+frontend/youtube-research-ui/dist/
