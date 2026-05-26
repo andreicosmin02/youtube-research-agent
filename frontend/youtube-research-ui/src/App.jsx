@@ -1,7 +1,7 @@
 // App.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const API_BASE = "/api";
+const API_URL = import.meta.env.VITE_API_URL || "/api";
 
 // ---------- helpers ----------
 const safeJsonParse = (s) => {
