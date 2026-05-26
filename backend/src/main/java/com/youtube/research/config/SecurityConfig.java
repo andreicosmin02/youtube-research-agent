@@ -33,11 +33,13 @@ public class SecurityConfig {
                         exceptions.authenticationEntryPoint(jwtAuthenticationEntryPoint)
                 )
                 .authorizeExchange(exchanges -> exchanges
+                        .pathMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .pathMatchers("/api/users/register").permitAll()
-                        .pathMatchers("/api/users/login").permitAll() // Should be accessible without token
-                        .pathMatchers("/api/users/**").authenticated() // Everything else under /api/users needs auth
-                        .pathMatchers("/api/conversations/**").authenticated() // Needs auth
-                        .anyExchange().authenticated() // Default: require auth
+                        .pathMatchers("/api/users/login").permitAll()
+                        .pathMatchers("/api/users/**").authenticated()
+                        .pathMatchers("/api/conversations/**").authenticated()
+                        .pathMatchers("/api/youtube/**").authenticated()
+                        .anyExchange().authenticated()
                 )
                 // Place the JWT filter BEFORE the standard authentication mechanisms
                 // This allows it to run and potentially set an authentication object
